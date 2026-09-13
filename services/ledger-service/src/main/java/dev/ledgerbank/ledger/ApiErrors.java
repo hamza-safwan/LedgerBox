@@ -1,0 +1,13 @@
+package dev.ledgerbank.ledger;
+
+import jakarta.servlet.http.HttpServletRequest;
+import java.net.URI;
+import org.springframework.http.*;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.*;
+
+class ApiException extends RuntimeException{final int status;final String code;ApiException(int status,String code,String message){super(message);this.status=status;this.code=code;}}
+@RestControllerAdvice class ApiErrors{
+ @ExceptionHandler(ApiException.class)ProblemDetail api(ApiException e,HttpServletRequest r){ProblemDetail p=ProblemDetail.forStatusAndDetail(HttpStatusCode.valueOf(e.status),e.getMessage());p.setTitle(e.code);p.setType(URI.create("https://ledgerbank.test/problems/"+e.code));p.setInstance(URI.create(r.getRequestURI()));return p;}
+ @ExceptionHandler(MethodArgumentNotValidException.class)ProblemDetail validation(){ProblemDetail p=ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,"Request validation failed");p.setTitle("validation_error");return p;}
+}

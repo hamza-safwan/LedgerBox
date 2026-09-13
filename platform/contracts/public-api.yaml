@@ -1,0 +1,692 @@
+openapi: 3.1.0
+info:
+  title: LedgerBank Sandbox API
+  version: 1.0.0
+  description: Synthetic identities and simulated USD only. No real money.
+servers:
+  - url: http://localhost:8080
+security:
+  - accessCookie: []
+tags:
+  - name: Auth
+  - name: Customer
+  - name: Accounts
+  - name: Transfers
+  - name: Rails
+  - name: Operations
+paths:
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      security: []
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 12, maxLength: 128 }
+      responses:
+        '201': { description: Verification required }
+        default: { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/verify-email:
+    post:
+      tags: [Auth]
+      security: []
+      operationId: verifyEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        '200': { description: Verified }
+        default: { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      security: []
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: HttpOnly access and refresh cookies issued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        default: { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      security: []
+      operationId: refresh
+      responses:
+        '200':
+          description: Rotated refresh cookie and new access cookie
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        default: { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      security: []
+      operationId: logout
+      responses:
+        '204': { description: Session revoked and cookies cleared }
+  /api/v1/auth/password-reset:
+    post:
+      tags: [Auth]
+      security: []
+      operationId: passwordReset
+      responses:
+        '202': { description: Generic accepted response }
+        default: { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      operationId: session
+      responses:
+        '200':
+          description: Current principal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        default: { $ref: '#/components/responses/Problem' }
+  /api/v1/customers/me:
+    get:
+      tags: [Customer]
+      operationId: getMyCustomer
+      responses:
+        '200':
+          description: Customer profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Customer' }
+        default: { $ref: '#/components/responses/Problem' }
+    put:
+      tags: [Customer]
+      operationId: putMyCustomer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [legalName, dateOfBirth, address]
+              properties:
+                legalName: { type: string, maxLength: 160 }
+                dateOfBirth: { type: string, format: date }
+                address: { type: string, maxLength: 300 }
+      responses:
+        '200':
+          description: Encrypted profile saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Customer' }
+        default: { $ref: '#/components/responses/Problem' }
+  /api/v1/kyc-submissions:
+    post:
+      tags: [Customer]
+      operationId: submitKyc
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [testIdentityCode]
+              properties:
+                testIdentityCode: { type: string, enum: [APPROVE, REJECT, REVIEW] }
+      responses:
+        '202': { description: Deterministic KYC result }
+        default: { $ref: '#/components/responses/Problem' }
+  /api/v1/accounts:
+    get:
+      tags: [Accounts]
+      operationId: listAccounts
+      responses:
+        '200':
+          description: Accounts owned by principal
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Account' }
+  /api/v1/accounts/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Accounts]
+      operationId: getAccount
+      responses:
+        '200':
+          description: Authoritative account projection
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        default: { $ref: '#/components/responses/Problem' }
+  /api/v1/accounts/{id}/statement:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Accounts]
+      operationId: getStatement
+      parameters:
+        - { name: before, in: query, schema: { type: string, format: date-time } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        '200':
+          description: Cursor page of immutable postings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StatementPage' }
+  /api/v1/transfers:
+    get:
+      tags: [Transfers]
+      operationId: listTransfers
+      responses:
+        '200':
+          description: Customer transfers
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Transfer' }
+    post:
+      tags: [Transfers]
+      operationId: createTransfer
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourceAccountId, destinationAccountNumber, amountMinor]
+              properties:
+                sourceAccountId: { type: string, format: uuid }
+                destinationAccountNumber: { type: string, pattern: '^[0-9]{12}$' }
+                amountMinor: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '201':
+          description: Transfer accepted, posted, or processing
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transfer' }
+        default: { $ref: '#/components/responses/Problem' }
+  /api/v1/transfers/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Transfers]
+      operationId: getTransfer
+      responses:
+        '200':
+          description: Transfer lifecycle
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transfer' }
+        default: { $ref: '#/components/responses/Problem' }
+  /api/v1/external-accounts:
+    get:
+      tags: [Rails]
+      operationId: listExternalAccounts
+      responses:
+        '200':
+          description: Synthetic linked accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ExternalAccount' }
+    post:
+      tags: [Rails]
+      operationId: linkExternalAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LinkExternalAccountRequest' }
+      responses:
+        '201':
+          description: Synthetic account linked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalAccount' }
+  /api/v1/ach-transfers:
+    get:
+      tags: [Rails]
+      operationId: listAchTransfers
+      responses:
+        '200':
+          description: Customer ACH simulations
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AchTransfer' }
+    post:
+      tags: [Rails]
+      operationId: createAchTransfer
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateAchTransferRequest' }
+      responses:
+        '201':
+          description: ACH simulation accepted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AchTransfer' }
+        default: { $ref: '#/components/responses/Problem' }
+  /api/v1/ach-transfers/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Rails]
+      operationId: getAchTransfer
+      responses:
+        '200':
+          description: ACH lifecycle
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AchTransfer' }
+  /api/v1/ops/accounts:
+    get:
+      tags: [Operations]
+      operationId: listAllAccounts
+      responses:
+        '200':
+          description: Operator account list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Account' }
+  /api/v1/ops/accounts/{id}/sandbox-funding:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Operations]
+      operationId: sandboxFunding
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AmountRequest' }
+      responses:
+        '201':
+          description: Balanced funding journal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Journal' }
+        default: { $ref: '#/components/responses/Problem' }
+  /api/v1/ops/journals/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Operations]
+      operationId: getJournal
+      responses:
+        '200':
+          description: Journal and postings
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [journal, postings]
+                properties:
+                  journal: { $ref: '#/components/schemas/Journal' }
+                  postings:
+                    type: array
+                    items: { $ref: '#/components/schemas/Posting' }
+  /api/v1/ops/transfers:
+    get:
+      tags: [Operations]
+      operationId: searchTransfers
+      responses:
+        '200':
+          description: Recent transfer aggregates
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Transfer' }
+  /api/v1/ops/transfers/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Operations]
+      operationId: traceTransfer
+      responses:
+        '200':
+          description: Transfer state, correlation timeline, and outbox publication records
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransferTrace' }
+        default: { $ref: '#/components/responses/Problem' }
+  /api/v1/ops/ach-transfers:
+    get:
+      tags: [Operations]
+      operationId: searchAchTransfers
+      responses:
+        '200':
+          description: ACH simulations
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AchTransfer' }
+  /api/v1/ops/settlement-batches:
+    get:
+      tags: [Operations]
+      operationId: listSettlementBatches
+      responses:
+        '200':
+          description: Generated settlement batches and reconciliation outcomes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SettlementBatch' }
+  /api/v1/ops/settlement-batches/{id}/reconcile:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Operations]
+      operationId: reconcileSettlementBatch
+      responses:
+        '200':
+          description: Recalculated settlement reconciliation result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettlementBatch' }
+        default: { $ref: '#/components/responses/Problem' }
+  /api/v1/ops/rail-clock:
+    get:
+      tags: [Operations]
+      operationId: getRailClock
+      responses:
+        '200':
+          description: Current accelerated rail clock
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RailClock' }
+    patch:
+      tags: [Operations]
+      operationId: setRailClockStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClockStatusRequest' }
+      responses:
+        '200':
+          description: Updated rail clock
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RailClock' }
+  /api/v1/ops/rail-clock/advance:
+    post:
+      tags: [Operations]
+      operationId: advanceRailClock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdvanceClockRequest' }
+      responses:
+        '200':
+          description: Advanced rail clock
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RailClock' }
+components:
+  securitySchemes:
+    accessCookie:
+      type: apiKey
+      in: cookie
+      name: LB_ACCESS
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 100 }
+  responses:
+    Problem:
+      description: RFC 9457 Problem Details
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    Session:
+      type: object
+      required: [userId, role, expiresIn]
+      properties:
+        userId: { type: string, format: uuid }
+        email: { type: [string, 'null'], format: email }
+        role: { type: string, enum: [CUSTOMER, OPERATOR] }
+        expiresIn: { type: integer, format: int64 }
+    Customer:
+      type: object
+      required: [customerId, userSubject, legalName, dateOfBirth, address, kycStatus, updatedAt]
+      properties:
+        customerId: { type: string, format: uuid }
+        userSubject: { type: string, format: uuid }
+        legalName: { type: string }
+        dateOfBirth: { type: string, format: date }
+        address: { type: string }
+        kycStatus: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, REJECTED, MANUAL_REVIEW] }
+        kycReason: { type: [string, 'null'] }
+        updatedAt: { type: string, format: date-time }
+    Account:
+      type: object
+      required: [accountId, accountNumber, name, status, currency, postedBalanceMinor, availableBalanceMinor, openedAt]
+      properties:
+        accountId: { type: string, format: uuid }
+        ownerSubject: { type: string, format: uuid }
+        accountNumber: { type: string }
+        name: { type: string }
+        status: { type: string, enum: [ACTIVE, FROZEN, CLOSED] }
+        currency: { type: string, const: USD }
+        postedBalanceMinor: { type: integer, format: int64 }
+        availableBalanceMinor: { type: integer, format: int64 }
+        openedAt: { type: string, format: date-time }
+    Transfer:
+      type: object
+      required: [transferId, sourceAccountId, destinationAccountNumber, amountMinor, currency, status, correlationId, createdAt, updatedAt]
+      properties:
+        transferId: { type: string, format: uuid }
+        sourceAccountId: { type: string, format: uuid }
+        destinationAccountNumber: { type: string }
+        amountMinor: { type: integer, format: int64 }
+        currency: { type: string, const: USD }
+        status: { type: string, enum: [RECEIVED, PROCESSING, POSTED, FAILED] }
+        failureCode: { type: [string, 'null'] }
+        journalId: { type: [string, 'null'], format: uuid }
+        correlationId: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ExternalAccount:
+      type: object
+      required: [externalAccountId, institutionName, maskedNumber, status, createdAt]
+      properties:
+        externalAccountId: { type: string, format: uuid }
+        institutionName: { type: string }
+        maskedNumber: { type: string }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+    LinkExternalAccountRequest:
+      type: object
+      required: [institutionName, last4]
+      properties:
+        institutionName: { type: string, minLength: 1, maxLength: 100 }
+        last4: { type: string, pattern: '^[0-9]{4}$' }
+    CreateAchTransferRequest:
+      type: object
+      required: [ledgerAccountId, externalAccountId, direction, amountMinor, scenario]
+      properties:
+        ledgerAccountId: { type: string, format: uuid }
+        externalAccountId: { type: string, format: uuid }
+        direction: { type: string, enum: [DEPOSIT, WITHDRAWAL] }
+        amountMinor: { type: integer, format: int64, minimum: 1 }
+        scenario: { type: string, enum: [SETTLE, REJECT, RETURN] }
+    AchTransfer:
+      type: object
+      required: [achTransferId, ledgerAccountId, externalAccountId, direction, amountMinor, currency, scenario, status, correlationId, createdAt, updatedAt]
+      properties:
+        achTransferId: { type: string, format: uuid }
+        ledgerAccountId: { type: string, format: uuid }
+        externalAccountId: { type: string, format: uuid }
+        direction: { type: string, enum: [DEPOSIT, WITHDRAWAL] }
+        amountMinor: { type: integer, format: int64 }
+        currency: { type: string, const: USD }
+        scenario: { type: string, enum: [SETTLE, REJECT, RETURN] }
+        status: { type: string, enum: [PROCESSING, INITIATED, SUBMITTED, SETTLED, REJECTED, RETURNED] }
+        journalId: { type: [string, 'null'], format: uuid }
+        settlementBatchId: { type: [string, 'null'], format: uuid }
+        failureDetail: { type: [string, 'null'] }
+        correlationId: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Journal:
+      type: object
+      required: [journalId, businessReference, journalType, description, correlationId, bookedAt]
+      properties:
+        journalId: { type: string, format: uuid }
+        businessReference: { type: string }
+        journalType: { type: string }
+        description: { type: string }
+        correlationId: { type: string }
+        bookedAt: { type: string, format: date-time }
+    Posting:
+      type: object
+      required: [postingId, accountId, direction, amountMinor, currency, bookedAt]
+      properties:
+        postingId: { type: string, format: uuid }
+        accountId: { type: string, format: uuid }
+        direction: { type: string, enum: [DEBIT, CREDIT] }
+        amountMinor: { type: integer, format: int64 }
+        currency: { type: string, const: USD }
+        bookedAt: { type: string, format: date-time }
+    AmountRequest:
+      type: object
+      required: [amountMinor]
+      properties:
+        amountMinor: { type: integer, format: int64, minimum: 1 }
+    TransferTimelineEntry:
+      type: object
+      required: [stage, detail, correlationId, occurredAt]
+      properties:
+        stage: { type: string }
+        detail: { type: string }
+        correlationId: { type: string }
+        occurredAt: { type: string, format: date-time }
+    OutboxEvent:
+      type: object
+      required: [eventId, eventType, occurredAt, attempts]
+      properties:
+        eventId: { type: string, format: uuid }
+        eventType: { type: string }
+        occurredAt: { type: string, format: date-time }
+        publishedAt: { type: [string, 'null'], format: date-time }
+        attempts: { type: integer, minimum: 0 }
+    TransferTrace:
+      type: object
+      required: [transfer, timeline, events]
+      properties:
+        transfer: { $ref: '#/components/schemas/Transfer' }
+        timeline:
+          type: array
+          items: { $ref: '#/components/schemas/TransferTimelineEntry' }
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/OutboxEvent' }
+    SettlementBatch:
+      type: object
+      required: [batchId, status, entryCount, totalDepositMinor, totalWithdrawalMinor, openedAt]
+      properties:
+        batchId: { type: string, format: uuid }
+        status: { type: string, enum: [OPEN, CLOSED, RECONCILED, EXCEPTION] }
+        entryCount: { type: integer, minimum: 0 }
+        totalDepositMinor: { type: integer, format: int64, minimum: 0 }
+        totalWithdrawalMinor: { type: integer, format: int64, minimum: 0 }
+        openedAt: { type: string, format: date-time }
+        closedAt: { type: [string, 'null'], format: date-time }
+        reconciledAt: { type: [string, 'null'], format: date-time }
+        exceptionDetail: { type: [string, 'null'] }
+    RailClock:
+      type: object
+      required: [currentTime, running, updatedAt]
+      properties:
+        currentTime: { type: string, format: date-time }
+        running: { type: boolean }
+        updatedAt: { type: string, format: date-time }
+    AdvanceClockRequest:
+      type: object
+      required: [seconds]
+      properties:
+        seconds: { type: integer, format: int64, minimum: 1, maximum: 2592000 }
+    ClockStatusRequest:
+      type: object
+      required: [running]
+      properties:
+        running: { type: boolean }
+    StatementPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [postingId, journalId, type, description, amountMinor, currency, bookedAt, reference]
+            properties:
+              postingId: { type: string, format: uuid }
+              journalId: { type: string, format: uuid }
+              type: { type: string }
+              description: { type: string }
+              amountMinor: { type: integer, format: int64 }
+              currency: { type: string, const: USD }
+              bookedAt: { type: string, format: date-time }
+              reference: { type: string }
+        nextCursor: { type: [string, 'null'] }
+    Problem:
+      type: object
+      required: [type, title, status, detail]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string, format: uri-reference }

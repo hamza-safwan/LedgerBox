@@ -1,0 +1,225 @@
+name: ledgerbank
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks: [ledgerbank]
+  environment: &common-env
+    KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    JWK_SET_URI: http://identity-service:8081/api/v1/auth/.well-known/jwks.json
+    LEDGERBANK_SERVICE_SECRET: ${LEDGERBANK_SERVICE_SECRET:-dev-service-secret-change-me}
+    MANAGEMENT_OTLP_TRACING_ENDPOINT: http://otel-collector:4318/v1/traces
+
+services:
+  postgres:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_dev
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./platform/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [ledgerbank]
+
+  kafka:
+    image: apache/kafka:4.1.2
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: [CMD-SHELL, "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 10s
+      timeout: 15s
+      retries: 20
+      start_period: 30s
+    networks: [ledgerbank]
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports: ["8025:8025"]
+    networks: [ledgerbank]
+
+  identity-service:
+    <<: *service-defaults
+    build: services/identity-service
+    environment:
+      <<: *common-env
+      DB_URL: jdbc:postgresql://postgres:5432/identity_db
+      DB_USER: identity_app
+      DB_PASSWORD: identity_dev
+      MAIL_HOST: mailpit
+      WEB_BASE_URL: http://localhost:8080
+      JWT_KEY_PATH: /var/lib/ledgerbank/jwt-keypair.properties
+      LEDGERBANK_OPERATOR_EMAIL: ${LEDGERBANK_OPERATOR_EMAIL:-operator@ledgerbank.test}
+      LEDGERBANK_OPERATOR_PASSWORD: ${LEDGERBANK_OPERATOR_PASSWORD:-ChangeMe-Operator-123!}
+    volumes:
+      - identity-key-data:/var/lib/ledgerbank
+    depends_on:
+      postgres: {condition: service_healthy}
+      mailpit: {condition: service_started}
+    healthcheck:
+      test: [CMD-SHELL, "curl -fsS http://localhost:8081/actuator/health/readiness || exit 1"]
+      interval: 8s
+      timeout: 4s
+      retries: 20
+
+  customer-service:
+    <<: *service-defaults
+    build: services/customer-service
+    environment:
+      <<: *common-env
+      DB_URL: jdbc:postgresql://postgres:5432/customer_db
+      DB_USER: customer_app
+      DB_PASSWORD: customer_dev
+      LEDGERBANK_PII_KEY: ${LEDGERBANK_PII_KEY:-ZGV2LW9ubHktMzItYnl0ZS1rZXktY2hhbmdlLW1lIQ==}
+      LEDGERBANK_PII_KEY_VERSION: ${LEDGERBANK_PII_KEY_VERSION:-v1}
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+      identity-service: {condition: service_healthy}
+    healthcheck:
+      test: [CMD-SHELL, "curl -fsS http://localhost:8082/actuator/health/readiness || exit 1"]
+      interval: 8s
+      timeout: 4s
+      retries: 20
+      start_period: 20s
+
+  ledger-service:
+    <<: *service-defaults
+    build: services/ledger-service
+    environment:
+      <<: *common-env
+      DB_URL: jdbc:postgresql://postgres:5432/ledger_db
+      DB_USER: ledger_app
+      DB_PASSWORD: ledger_dev
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+      identity-service: {condition: service_healthy}
+    healthcheck:
+      test: [CMD-SHELL, "curl -fsS http://localhost:8083/actuator/health/readiness || exit 1"]
+      interval: 8s
+      timeout: 4s
+      retries: 20
+      start_period: 20s
+
+  money-movement-service:
+    <<: *service-defaults
+    build: services/money-movement-service
+    environment:
+      <<: *common-env
+      DB_URL: jdbc:postgresql://postgres:5432/movement_db
+      DB_USER: movement_app
+      DB_PASSWORD: movement_dev
+      IDENTITY_URL: http://identity-service:8081
+      LEDGER_URL: http://ledger-service:8083
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+      identity-service: {condition: service_healthy}
+      ledger-service: {condition: service_healthy}
+    healthcheck:
+      test: [CMD-SHELL, "curl -fsS http://localhost:8084/actuator/health/readiness || exit 1"]
+      interval: 8s
+      timeout: 4s
+      retries: 20
+      start_period: 20s
+
+  rail-simulator:
+    <<: *service-defaults
+    build: services/rail-simulator
+    environment:
+      <<: *common-env
+      DB_URL: jdbc:postgresql://postgres:5432/rail_db
+      DB_USER: rail_app
+      DB_PASSWORD: rail_dev
+      IDENTITY_URL: http://identity-service:8081
+      LEDGER_URL: http://ledger-service:8083
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+      identity-service: {condition: service_healthy}
+      ledger-service: {condition: service_healthy}
+    healthcheck:
+      test: [CMD-SHELL, "curl -fsS http://localhost:8085/actuator/health/readiness || exit 1"]
+      interval: 8s
+      timeout: 4s
+      retries: 20
+      start_period: 20s
+
+  gateway:
+    <<: *service-defaults
+    build: services/gateway
+    environment:
+      <<: *common-env
+      IDENTITY_URL: http://identity-service:8081
+      CUSTOMER_URL: http://customer-service:8082
+      LEDGER_URL: http://ledger-service:8083
+      MOVEMENT_URL: http://money-movement-service:8084
+      RAIL_URL: http://rail-simulator:8085
+    depends_on:
+      identity-service: {condition: service_healthy}
+      customer-service: {condition: service_healthy}
+      ledger-service: {condition: service_healthy}
+      money-movement-service: {condition: service_healthy}
+      rail-simulator: {condition: service_healthy}
+    healthcheck:
+      test: [CMD-SHELL, "curl -fsS http://localhost:8080/actuator/health/readiness || exit 1"]
+      interval: 8s
+      timeout: 4s
+      retries: 20
+      start_period: 20s
+
+  web:
+    build: apps/web
+    ports: ["8080:8080"]
+    depends_on:
+      gateway: {condition: service_healthy}
+    networks: [ledgerbank]
+
+  prometheus:
+    image: prom/prometheus:v3.6.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    volumes: ["./platform/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    networks: [ledgerbank]
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    ports: ["3001:3000"]
+    volumes: ["./platform/grafana/provisioning:/etc/grafana/provisioning:ro"]
+    networks: [ledgerbank]
+
+  tempo:
+    image: grafana/tempo:2.8.2
+    command: ["-config.file=/etc/tempo.yml"]
+    volumes: ["./platform/tempo/tempo.yml:/etc/tempo.yml:ro"]
+    networks: [ledgerbank]
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.133.0
+    command: ["--config=/etc/otelcol/config.yml"]
+    volumes: ["./platform/otel/collector.yml:/etc/otelcol/config.yml:ro"]
+    depends_on: [tempo]
+    networks: [ledgerbank]
+
+volumes:
+  postgres-data:
+  identity-key-data:
+
+networks:
+  ledgerbank:
+    driver: bridge

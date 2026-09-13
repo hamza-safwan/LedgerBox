@@ -1,0 +1,33 @@
+server.port: 8084
+spring:
+  application.name: money-movement-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/movement_db}
+    username: ${DB_USER:movement_app}
+    password: ${DB_PASSWORD:movement_dev}
+  jpa:
+    open-in-view: false
+    hibernate.ddl-auto: validate
+  flyway.enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: money-movement-service
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+management:
+  endpoints.web.exposure.include: health,info,prometheus
+  endpoint.health.probes.enabled: true
+  tracing.sampling.probability: 1.0
+logging.structured.format.console: logstash
+ledgerbank:
+  jwk-set-uri: ${JWK_SET_URI:http://localhost:8081/api/v1/auth/.well-known/jwks.json}
+  identity-url: ${IDENTITY_URL:http://localhost:8081}
+  ledger-url: ${LEDGER_URL:http://localhost:8083}
+  service-client-id: money-movement-service
+  service-client-secret: ${LEDGERBANK_SERVICE_SECRET:dev-service-secret-change-me}

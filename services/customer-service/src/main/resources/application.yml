@@ -1,0 +1,25 @@
+server.port: 8082
+spring:
+  application.name: customer-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/customer_db}
+    username: ${DB_USER:customer_app}
+    password: ${DB_PASSWORD:customer_dev}
+  jpa:
+    open-in-view: false
+    hibernate.ddl-auto: validate
+  flyway.enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+management:
+  endpoints.web.exposure.include: health,info,prometheus
+  endpoint.health.probes.enabled: true
+  tracing.sampling.probability: 1.0
+logging.structured.format.console: logstash
+ledgerbank:
+  jwk-set-uri: ${JWK_SET_URI:http://localhost:8081/api/v1/auth/.well-known/jwks.json}
+  pii-key: ${LEDGERBANK_PII_KEY:ZGV2LW9ubHktMzItYnl0ZS1rZXktY2hhbmdlLW1lIQ==}
+  pii-key-version: ${LEDGERBANK_PII_KEY_VERSION:v1}

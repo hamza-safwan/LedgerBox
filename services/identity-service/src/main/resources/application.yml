@@ -1,0 +1,31 @@
+server:
+  port: 8081
+spring:
+  application:
+    name: identity-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/identity_db}
+    username: ${DB_USER:identity_app}
+    password: ${DB_PASSWORD:identity_dev}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+management:
+  endpoints.web.exposure.include: health,info,prometheus
+  endpoint.health.probes.enabled: true
+  tracing.sampling.probability: 1.0
+logging.structured.format.console: logstash
+ledgerbank:
+  web-base-url: ${WEB_BASE_URL:http://localhost:8080}
+  cookie-secure: ${COOKIE_SECURE:false}
+  jwt-key-path: ${JWT_KEY_PATH:}
+  service-client-id: ${SERVICE_CLIENT_ID:money-movement-service}
+  service-client-secret: ${LEDGERBANK_SERVICE_SECRET:dev-service-secret-change-me}
+  operator-email: ${LEDGERBANK_OPERATOR_EMAIL:operator@ledgerbank.test}
+  operator-password: ${LEDGERBANK_OPERATOR_PASSWORD:ChangeMe-Operator-123!}

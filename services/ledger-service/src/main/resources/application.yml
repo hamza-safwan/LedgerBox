@@ -1,0 +1,26 @@
+server.port: 8083
+spring:
+  application.name: ledger-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/ledger_db}
+    username: ${DB_USER:ledger_app}
+    password: ${DB_PASSWORD:ledger_dev}
+  flyway.enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ledger-service
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+management:
+  endpoints.web.exposure.include: health,info,prometheus
+  endpoint.health.probes.enabled: true
+  tracing.sampling.probability: 1.0
+logging.structured.format.console: logstash
+ledgerbank:
+  jwk-set-uri: ${JWK_SET_URI:http://localhost:8081/api/v1/auth/.well-known/jwks.json}

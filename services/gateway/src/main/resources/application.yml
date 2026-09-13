@@ -1,0 +1,33 @@
+server.port: 8080
+spring:
+  application.name: gateway
+  cloud.gateway.server.webflux.routes:
+    - id: identity
+      uri: ${IDENTITY_URL:http://localhost:8081}
+      predicates:
+        - Path=/api/v1/auth/**
+    - id: customers
+      uri: ${CUSTOMER_URL:http://localhost:8082}
+      predicates:
+        - Path=/api/v1/customers/**,/api/v1/kyc-submissions,/api/v1/ops/customers/**
+    - id: ledger
+      uri: ${LEDGER_URL:http://localhost:8083}
+      predicates:
+        - Path=/api/v1/accounts/**,/api/v1/ops/accounts/**,/api/v1/ops/journals/**,/api/v1/ops/ledger-dead-letters/**
+    - id: movement
+      uri: ${MOVEMENT_URL:http://localhost:8084}
+      predicates:
+        - Path=/api/v1/transfers/**,/api/v1/ops/transfers/**,/api/v1/ops/movement-dead-letters/**
+    - id: rails
+      uri: ${RAIL_URL:http://localhost:8085}
+      predicates:
+        - Path=/api/v1/external-accounts/**,/api/v1/ach-transfers/**,/api/v1/ops/ach-transfers/**,/api/v1/ops/settlement-batches/**,/api/v1/ops/rail-clock/**
+management:
+  endpoints.web.exposure.include: health,info,prometheus
+  endpoint.health.probes.enabled: true
+  tracing.sampling.probability: 1.0
+logging.structured.format.console: logstash
+ledgerbank:
+  jwk-set-uri: ${JWK_SET_URI:http://localhost:8081/api/v1/auth/.well-known/jwks.json}
+  cookie-secure: ${COOKIE_SECURE:false}
+  allowed-origins: ${ALLOWED_ORIGINS:http://localhost:8080,http://localhost:5173}

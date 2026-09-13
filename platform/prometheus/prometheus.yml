@@ -1,0 +1,14 @@
+global:
+  scrape_interval: 10s
+scrape_configs:
+  - job_name: ledgerbank
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - identity-service:8081
+          - customer-service:8082
+          - ledger-service:8083
+          - money-movement-service:8084
+          - rail-simulator:8085
+          - gateway:8080
+
